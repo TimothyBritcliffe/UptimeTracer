@@ -1,0 +1,10 @@
+[
+  {
+    "url": "https://example1.com/",
+    "isUp": false
+  },
+  {
+    "url": "https://example2.ca",
+    "isUp": false
+  }
+]
