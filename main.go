@@ -17,25 +17,25 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Loads all the Urls listed inside of domains.json
-func loadData() ([]model.Url, error) {
+// Loads all the sites listed inside of domains.json
+func loadData() ([]model.Site, error) {
 	data, err := os.ReadFile("json/domains.json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read json/domains.json: %w", err)
 	}
-	var urls []model.Url
-	err = json.Unmarshal(data, &urls)
+	var sites []model.Site
+	err = json.Unmarshal(data, &sites)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse json/domains.json: %w", err)
 	}
-	if len(urls) == 0 {
-		return nil, fmt.Errorf("json/domains.json contains no URLs to monitor")
+	if len(sites) == 0 {
+		return nil, fmt.Errorf("json/domains.json contains no sites to monitor")
 	}
 	// Ensures the state persists (won't re-alert on a restart)
-	for i := range urls {
-		urls[i].Previous = urls[i].IsUp
+	for i := range sites {
+		sites[i].Previous = sites[i].IsUp
 	}
-	return urls, nil
+	return sites, nil
 }
 
 // Defines client with a set timeout
@@ -43,22 +43,22 @@ var client = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
-// Checker to change url.IsUp depending on the status code received from a given url
-func checkStatus(url *model.Url, wg *sync.WaitGroup) {
+// Checker to change site.IsUp depending on the status code received from a given site
+func checkStatus(site *model.Site, wg *sync.WaitGroup) {
 	defer wg.Done()
-	//updates the previous variable, gets the status of the webpage and updates the UpDown variable of the given url
-	resp, err := client.Get(url.Url)
+	//updates the previous variable, gets the status of the webpage and updates the UpDown variable of the given site
+	resp, err := client.Get(site.Url)
 	if err != nil {
-		url.IsUp = false // mark as down, not just unknown
+		site.IsUp = false // mark as down, not just unknown
 		return
 	}
 	defer resp.Body.Close()
-	url.IsUp = resp.StatusCode >= 200 && resp.StatusCode < 400
+	site.IsUp = resp.StatusCode >= 200 && resp.StatusCode < 400
 }
 
 // Saves data into the .JSON file for data persistence
-func saveData(urls []model.Url) error {
-	data, err := json.MarshalIndent(urls, "", "  ")
+func saveData(sites []model.Site) error {
+	data, err := json.MarshalIndent(sites, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func saveData(urls []model.Url) error {
 // timestamp is the time of the check
 // url is the specific url
 // alert is a boolean, if there is a change it is true, else false
-// isUp is the most up-to-date value of model.Url.UpDown
+// isUp is the most up-to-date value of model.Site.UpDown
 // Creates the CSV
 func createLog() string {
 	if err := os.MkdirAll("logs", 0755); err != nil {
@@ -97,7 +97,7 @@ func createLog() string {
 }
 
 // Writes the data to a .csv file
-func writeToLog(url model.Url, filename string, timestamp string, alert bool) {
+func writeToLog(site model.Site, filename string, timestamp string, alert bool) {
 	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Println("Failed to open log file:", err)
@@ -110,9 +110,9 @@ func writeToLog(url model.Url, filename string, timestamp string, alert bool) {
 
 	record := []string{
 		timestamp,
-		url.Url,
+		site.Url,
 		fmt.Sprintf("%t", alert),
-		fmt.Sprintf("%t", url.IsUp),
+		fmt.Sprintf("%t", site.IsUp),
 	}
 	if err := writer.Write(record); err != nil {
 		log.Println("Failed to write to log:", err)
@@ -120,7 +120,7 @@ func writeToLog(url model.Url, filename string, timestamp string, alert bool) {
 }
 
 // Uses SMTP to send an email from a designated GMAIL account (must have an app password)
-func sendEmail(url model.Url, timestamp string) {
+func sendEmail(site model.Site, timestamp string) {
 	//Define variables cleanly
 	emailAdd := os.Getenv("EMAIL_ADDR")
 	password := os.Getenv("EMAIL_PASSWORD") // Specifically an app password
@@ -128,9 +128,9 @@ func sendEmail(url model.Url, timestamp string) {
 	recipients := strings.Split(os.Getenv("EMAIL_RECIPIENTS"), ",")
 
 	a := smtp.PlainAuth("", emailAdd, password, emailServer)
-	//Determines if the url went down or up
+	//Determines if the site went down or up
 	var keyword string
-	if url.IsUp {
+	if site.IsUp {
 		keyword = "up"
 	} else {
 		keyword = "down"
@@ -140,11 +140,11 @@ func sendEmail(url model.Url, timestamp string) {
 	msg := []byte(
 		"From: " + emailAdd + "\r\n" +
 			"To: " + strings.Join(recipients, ", ") + "\r\n" +
-			"Subject: " + "Alert for " + strings.TrimPrefix(url.Url, "https://") + "\r\n" +
+			"Subject: " + "Alert for " + strings.TrimPrefix(site.Url, "https://") + "\r\n" +
 			"MIME-Version: 1.0\r\n" +
 			"Content-Type: text/html; charset=UTF-8\r\n" +
 			"\r\n" +
-			"<h1>Alert!</h1><p>Hey User,<br>As of " + timestamp + ", " + url.Url + " is currently " + keyword + "</p>\r\n",
+			"<h1>Alert!</h1><p>Hey User,<br>As of " + timestamp + ", " + site.Url + " is currently " + keyword + "</p>\r\n",
 	)
 
 	//Send the email to all email addresses in "recipients"
@@ -191,31 +191,31 @@ func main() {
 		}
 		wg.Wait()
 		// Loop to determine if the status has changed; will only print an alert if it has.
-		for _, myUrl := range data {
+		for _, site := range data {
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
 			// Logic to log an Alert (Also sends an email)
-			if myUrl.IsUp != myUrl.Previous {
+			if site.IsUp != site.Previous {
 				status := "UP"
-				if !myUrl.IsUp {
+				if !site.IsUp {
 					status = "DOWN"
 				}
-				msg := fmt.Sprintf("ALERT: %s is %s", myUrl.Url, status)
+				msg := fmt.Sprintf("ALERT: %s is %s", site.Url, status)
 				fmt.Println(msg)
-				writeToLog(myUrl, logName, timestamp, true)
+				writeToLog(site, logName, timestamp, true)
 				if envCheck {
-					sendEmail(myUrl, timestamp)
+					sendEmail(site, timestamp)
 				}
 			} else {
 				// Logic to log when there is no changes (no emails)
-				fmt.Println(myUrl.String())
-				writeToLog(myUrl, logName, timestamp, false)
+				fmt.Println(site.String())
+				writeToLog(site, logName, timestamp, false)
 			}
 		}
-		// Update url.Previous for next cycle
+		// Update site.Previous for next cycle
 		for i := range data {
 			data[i].Previous = data[i].IsUp
 		}
-		// Saves updated URLS to the .JSON
+		// Saves updated sites to the .JSON
 		err := saveData(data)
 		if err != nil {
 			fmt.Println(err)
