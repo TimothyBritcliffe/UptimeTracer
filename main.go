@@ -74,40 +74,28 @@ func saveData(sites []model.Site) error {
 // alert is a boolean, if there is a change it is true, else false
 // isUp is the most up-to-date value of model.Site.UpDown
 // Creates the CSV
-func createLog() string {
+func createLog() (*csv.Writer, *os.File, error) {
 	if err := os.MkdirAll("logs", 0755); err != nil {
-		log.Fatal("Failed to create logs directory:", err)
+		return nil, nil, fmt.Errorf("could not create log directory: %w", err)
 	}
 
 	filename := "logs/data-" + time.Now().Format("2006-01-02_15-04-05") + ".csv"
 	file, err := os.Create(filename)
 	if err != nil {
-		log.Fatal(err)
+		return nil, nil, fmt.Errorf("could not create log file: %w", err)
 	}
-	defer file.Close()
 	writer := csv.NewWriter(file)
-	defer writer.Flush()
 
 	err = writer.Write([]string{"timestamp", "url", "alert", "isUp"})
 	if err != nil {
-		return ""
+		return nil, nil, fmt.Errorf("failed to write to file: %w", err)
 	}
 
-	return filename
+	return writer, file, nil
 }
 
 // Writes the data to a .csv file
-func writeToLog(site model.Site, filename string, timestamp string, alert bool) {
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Println("Failed to open log file:", err)
-		return
-	}
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-
+func writeToLog(site model.Site, timestamp string, alert bool, writer *csv.Writer) {
 	record := []string{
 		timestamp,
 		site.Url,
@@ -180,7 +168,12 @@ func main() {
 		fmt.Println(err)
 		envCheck = false
 	}
-	logName := createLog()
+	logWriter, logFile, err := createLog()
+	if err != nil {
+		log.Fatal("Not logging:", err)
+	}
+	defer logFile.Close()
+	defer logWriter.Flush()
 	// Main loop that iterates forever
 	for {
 		// Loop to iterate through entire set of domains
@@ -201,14 +194,14 @@ func main() {
 				}
 				msg := fmt.Sprintf("ALERT: %s is %s", site.Url, status)
 				fmt.Println(msg)
-				writeToLog(site, logName, timestamp, true)
+				writeToLog(site, timestamp, true, logWriter)
 				if envCheck {
 					sendEmail(site, timestamp)
 				}
 			} else {
 				// Logic to log when there is no changes (no emails)
 				fmt.Println(site.String())
-				writeToLog(site, logName, timestamp, false)
+				writeToLog(site, timestamp, false, logWriter)
 			}
 		}
 		// Update site.Previous for next cycle
@@ -220,6 +213,7 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
+		logWriter.Flush()
 		time.Sleep(5 * time.Minute) // Modify this depending on the frequency you want to check the domains
 	}
 }
