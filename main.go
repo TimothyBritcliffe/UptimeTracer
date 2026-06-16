@@ -44,16 +44,17 @@ var client = &http.Client{
 }
 
 // Checker to change site.IsUp depending on the status code received from a given site
-func checkStatus(site *model.Site, wg *sync.WaitGroup) {
-	defer wg.Done()
+func checkStatus(site *model.Site) error {
 	//updates the previous variable, gets the status of the webpage and updates the UpDown variable of the given site
 	resp, err := client.Get(site.Url)
 	if err != nil {
 		site.IsUp = false // mark as down, not just unknown
-		return
+		return fmt.Errorf("could not get site %s: %w", site.Url, err)
 	}
 	defer resp.Body.Close()
 	site.IsUp = resp.StatusCode >= 200 && resp.StatusCode < 400
+
+	return nil
 }
 
 // Saves data into the .JSON file for data persistence
@@ -95,20 +96,23 @@ func createLog() (*csv.Writer, *os.File, error) {
 }
 
 // Writes the data to a .csv file
-func writeToLog(site model.Site, timestamp string, alert bool, writer *csv.Writer) {
+func writeToLog(site model.Site, timestamp string, alert bool, writer *csv.Writer) error {
 	record := []string{
 		timestamp,
 		site.Url,
 		fmt.Sprintf("%t", alert),
 		fmt.Sprintf("%t", site.IsUp),
 	}
-	if err := writer.Write(record); err != nil {
-		log.Println("Failed to write to log:", err)
+	err := writer.Write(record)
+	if err != nil {
+		return fmt.Errorf("failed to write to log: %w", err)
 	}
+
+	return nil
 }
 
 // Uses SMTP to send an email from a designated GMAIL account (must have an app password)
-func sendEmail(site model.Site, timestamp string) {
+func sendEmail(site model.Site, timestamp string) error {
 	//Define variables cleanly
 	emailAdd := os.Getenv("EMAIL_ADDR")
 	password := os.Getenv("EMAIL_PASSWORD") // Specifically an app password
@@ -138,8 +142,9 @@ func sendEmail(site model.Site, timestamp string) {
 	//Send the email to all email addresses in "recipients"
 	err := smtp.SendMail(emailServer+":587", a, emailAdd, recipients, msg)
 	if err != nil {
-		log.Println("Error sending email:", err)
+		return fmt.Errorf("error sending email: %w", err)
 	}
+	return nil
 }
 
 // Helper function to validate whether the environment variables have been set
@@ -158,18 +163,19 @@ func validateEmailConfig() error {
 
 func main() {
 	_ = godotenv.Load()
-	data, err := loadData()
-	if err != nil {
+	var data []model.Site
+	var err error
+	if data, err = loadData(); err != nil {
 		log.Fatal(err)
 	}
 	envCheck := true
-	err = validateEmailConfig()
-	if err != nil {
-		fmt.Println(err)
+	if err := validateEmailConfig(); err != nil {
+		log.Println(err)
 		envCheck = false
 	}
-	logWriter, logFile, err := createLog()
-	if err != nil {
+	var logWriter *csv.Writer
+	var logFile *os.File
+	if logWriter, logFile, err = createLog(); err != nil {
 		log.Fatal("Not logging:", err)
 	}
 	defer logFile.Close()
@@ -178,11 +184,21 @@ func main() {
 	for {
 		// Loop to iterate through entire set of domains
 		wg := sync.WaitGroup{}
+		errs := make([]error, len(data))
 		for i := range data {
 			wg.Add(1)
-			go checkStatus(&data[i], &wg)
+			go func(i int) {
+				defer wg.Done()
+				errs[i] = checkStatus(&data[i])
+			}(i)
 		}
 		wg.Wait()
+		// Loop to iterate through the list of errors
+		for _, err := range errs {
+			if err != nil {
+				log.Println(err)
+			}
+		}
 		// Loop to determine if the status has changed; will only print an alert if it has.
 		for _, site := range data {
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
@@ -194,14 +210,20 @@ func main() {
 				}
 				msg := fmt.Sprintf("ALERT: %s is %s", site.Url, status)
 				fmt.Println(msg)
-				writeToLog(site, timestamp, true, logWriter)
+				if err := writeToLog(site, timestamp, true, logWriter); err != nil {
+					log.Println(err)
+				}
 				if envCheck {
-					sendEmail(site, timestamp)
+					if err := sendEmail(site, timestamp); err != nil {
+						log.Println(err)
+					}
 				}
 			} else {
 				// Logic to log when there is no changes (no emails)
 				fmt.Println(site.String())
-				writeToLog(site, timestamp, false, logWriter)
+				if err := writeToLog(site, timestamp, false, logWriter); err != nil {
+					log.Println(err)
+				}
 			}
 		}
 		// Update site.Previous for next cycle
@@ -209,9 +231,8 @@ func main() {
 			data[i].Previous = data[i].IsUp
 		}
 		// Saves updated sites to the .JSON
-		err := saveData(data)
-		if err != nil {
-			fmt.Println(err)
+		if err := saveData(data); err != nil {
+			log.Println(err)
 		}
 		logWriter.Flush()
 		time.Sleep(5 * time.Minute) // Modify this depending on the frequency you want to check the domains
