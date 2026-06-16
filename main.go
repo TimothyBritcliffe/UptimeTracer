@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/csv"
 	"uptimetracer/checker"
 	"uptimetracer/logger"
 	"uptimetracer/model"
@@ -30,13 +29,27 @@ func main() {
 		log.Println(err)
 		envCheck = false
 	}
-	var logWriter *csv.Writer
-	var logFile *os.File
-	if logWriter, logFile, err = logger.CreateLog(); err != nil {
-		log.Fatal("Not logging:", err)
+	logging, err := logger.NewLogger()
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer logFile.Close()
-	defer logWriter.Flush()
+	defer logging.Close()
+
+	// Retrieves the set interval in .env
+
+	interval := os.Getenv("INTERVAL_MINUTES")
+	var intInterval int64
+
+	if intInterval, err = strconv.ParseInt(interval, 10, 64); err != nil {
+		log.Println("no integer assigned to \"INTERVAL_MINUTES\" in .env:", err)
+		intInterval = 5
+	}
+
+	if intInterval <= 0 {
+		log.Println("INTERVAL must be > 0, defaulting to 5 minutes")
+		intInterval = 5
+	}
+
 	// Main loop that iterates forever
 	for {
 		// Loop to iterate through entire set of domains
@@ -67,7 +80,7 @@ func main() {
 				}
 				msg := fmt.Sprintf("ALERT: %s is %s", site.Url, status)
 				fmt.Println(msg)
-				if err := logger.WriteToLog(site, timestamp, true, logWriter); err != nil {
+				if err := logging.Write(site, timestamp, true); err != nil {
 					log.Println(err)
 				}
 				if envCheck {
@@ -78,7 +91,7 @@ func main() {
 			} else {
 				// Logic to log when there is no changes (no emails)
 				fmt.Println(site.String())
-				if err := logger.WriteToLog(site, timestamp, false, logWriter); err != nil {
+				if err := logging.Write(site, timestamp, false); err != nil {
 					log.Println(err)
 				}
 			}
@@ -91,21 +104,9 @@ func main() {
 		if err := store.SaveData(data); err != nil {
 			log.Println(err)
 		}
-		logWriter.Flush()
+		logging.Flush()
 
-		// Retrieves the interval, converts it to an integer, then waits the length of time before moving to the next iteration
-		interval := os.Getenv("INTERVAL_MINUTES")
-		var intInterval int64
-
-		if intInterval, err = strconv.ParseInt(interval, 10, 64); err != nil {
-			log.Println("no integer assigned to \"INTERVAL_MINUTES\" in .env:", err)
-			intInterval = 5
-		}
-
-		if intInterval <= 0 {
-			log.Println("INTERVAL must be > 0, defaulting to 5 minutes")
-			intInterval = 5
-		}
+		// Waits before moving on with the next iteration
 		time.Sleep(time.Duration(intInterval) * time.Minute)
 	}
 }
