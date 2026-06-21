@@ -22,6 +22,7 @@ This project uses environment variables to store important data for email alerts
 | EMAIL_PASSWORD | abcd efgh ijkl mnop                     | The Google account application password you generated (not your Google account password) |
 | EMAIL_RECIPIENTS | example1@gmail.com,example2@outlook.com | The list of email addresses you want to receive alerts (if more than one, separate them with a comma; no spaces. |
 | SMTP_HOST | smtp.gmail.com | The email server you are looking to use |
+| INTERVAL_MINUTES | 5 | The length of time (in minutes) between checks |
 
 A .env file must be created to store the environment variables. This project uses [godotenv](https://github.com/joho/godotenv) to manage environment variables. This file should be formatted like so:
 ```
@@ -29,4 +30,5 @@ EMAIL_ADDR=you@gmail.com
 EMAIL_PASSWORD=abcd efgh ijkl mnop
 EMAIL_RECIPIENTS=you@gmail.com,other@outlook.com
 SMTP_HOST=smtp.gmail.com
+INTERVAL_MINUTES=5
 ```
