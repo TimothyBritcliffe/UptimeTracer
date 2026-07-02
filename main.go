@@ -29,6 +29,9 @@ func main() {
 		log.Println(err)
 		envCheck = false
 	}
+	if err := notifier.ValidatePort(); err != nil {
+		log.Fatal(err)
+	}
 	logging, err := logger.NewLogger()
 	if err != nil {
 		log.Fatal(err)

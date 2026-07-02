@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/smtp"
 	"os"
+	"strconv"
 	"strings"
 	"uptimetracer/model"
 )
@@ -14,6 +15,7 @@ func SendEmail(site model.Site, timestamp string) error {
 	emailAdd := os.Getenv("EMAIL_ADDR")
 	password := os.Getenv("EMAIL_PASSWORD") // Specifically an app password
 	emailServer := os.Getenv("SMTP_HOST")
+	emailPort := os.Getenv("SMTP_PORT")
 	recipients := strings.Split(os.Getenv("EMAIL_RECIPIENTS"), ",")
 
 	a := smtp.PlainAuth("", emailAdd, password, emailServer)
@@ -41,7 +43,7 @@ func SendEmail(site model.Site, timestamp string) error {
 	)
 
 	//Send the email to all email addresses in "recipients"
-	err := smtp.SendMail(emailServer+":587", a, emailAdd, recipients, msg)
+	err := smtp.SendMail(emailServer+":"+emailPort, a, emailAdd, recipients, msg)
 	if err != nil {
 		return fmt.Errorf("error sending email: %w", err)
 	}
@@ -59,5 +61,36 @@ func ValidateEmailConfig() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("email alerts disabled, missing: %s", strings.Join(missing, ", "))
 	}
+	return nil
+}
+
+// AllowedSMTPPorts is a map containing the three valid SMTP port numbers
+var AllowedSMTPPorts = map[int]bool{
+	25:  true, // Standard SMTP (many ISPs block outbound)
+	465: true, // SMTPS (implicit TLS)
+	587: true, // STARTTLS (recommended modern default)
+}
+
+// ValidatePort ensures SMTP_PORT is set, set to a number, and set to one of the specific ports in AllowedSMTPPorts
+func ValidatePort() error {
+	portStr := os.Getenv("SMTP_PORT")
+
+	if portStr == "" {
+		return fmt.Errorf("SMTP_PORT cannot be empty")
+	}
+
+	portNum, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("invalid SMTP_PORT '%s': must be numeric", portStr)
+	}
+
+	if !AllowedSMTPPorts[portNum] {
+		return fmt.Errorf(
+			"invalid SMTP_PORT '%d'. Supported ports: 25, 465, 587 "+
+				"(refer to your email provider documentation)",
+			portNum,
+		)
+	}
+
 	return nil
 }
