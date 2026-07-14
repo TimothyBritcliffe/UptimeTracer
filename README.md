@@ -34,3 +34,9 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 INTERVAL_MINUTES=5
 ```
+
+## Roadmap
+
+- **v0.1.0** (Completed): Stable initial release of the CLI application with email alerts, and JSON files for keeping track of monitoring domains
+- **v0.2.0**: SQLite migration & HTML/CSS dashboard (breaking change — JSON files deprecated)
+- **v0.3.0**: ICMP monitoring support (non-breaking)
