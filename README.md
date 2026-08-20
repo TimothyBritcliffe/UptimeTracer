@@ -1,17 +1,24 @@
 # UptimeTracer
 UptimeTracer is a CLI tool for monitoring and reporting on domain status changes.
 
+---
+
 ## Features
 - Can monitor multiple URLs concurrently
 - Detects status changes (up→down, down→up) and alerts via email
 - Logs every check into a .CSV file in `/logs`
 - Persists URL state across system restarts via .JSON
+- A domain is considered active if an HTTP response is received with a status code in the 200-399 (inclusive) range. Any other HTTP status code received, or any request error (such as timeouts, DNS, connection failure) means the domain is considered inactive.
+
+---
 
 ## Setup
 1. Clone this repository
 2. Add URLs to `json/domains.json`
 3. Set environment variables
 4. Run `go run .`
+
+---
 
 ## Environment Variables
 This project uses environment variables to store important data for email alerts such as the sending email address, Google account app password, and the list of recipient emails. The following table shows the variable name, example, and description:
@@ -34,6 +41,8 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 INTERVAL_MINUTES=5
 ```
+
+---
 
 ## Roadmap
 
